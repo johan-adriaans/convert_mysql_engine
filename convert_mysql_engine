@@ -1,0 +1,78 @@
+#!/bin/bash
+
+DATABASE=$1
+
+# Sanity check
+if [ -z "$DATABASE" ]
+then
+  echo Use this script to convert all tables in a MySQL databases to another engine.
+  echo
+  echo Usage: convert_mysql_engine [database] [username=root] [engine=InnoDB]
+  echo Examples:
+  echo "  convert_mysql_engine test_db my_user MyISAM"
+  echo "  convert_mysql_engine test"
+  exit
+fi
+
+# Handle username
+if [ -z $2 ]
+then
+  USERNAME=root
+else
+  USERNAME=$2
+fi
+
+# Handle engine
+if [ -z $3 ]
+then
+  ENGINE=InnoDB
+else
+  ENGINE=$3
+fi
+
+# READ CURRENT stty
+stty_orig=`stty -g`
+
+# Handle Ctrl-C
+trap manual_exit SIGINT
+manual_exit(){
+  echo
+  echo Caught Ctrl-C. Exiting...
+  stty $stty_orig
+  exit
+}
+
+# Get password
+printf "MySQL password for user $USERNAME: "
+stty -echo
+read PASSWORD
+stty $stty_orig
+echo
+
+# Read list of tables
+TABLES=$(echo "show tables;" | mysql -u $USERNAME -p"$PASSWORD" $DATABASE | tail -n +2)
+if [ -z "$TABLES" ]
+then
+  exit
+fi
+
+echo Connected to database $DATABASE
+
+# Actual conversion
+SQL=
+for TBL in $TABLES
+do
+   SQL="ALTER TABLE $TBL ENGINE = $ENGINE;"
+   printf "Converting $DATABASE.$TBL to $ENGINE.. "
+   echo $SQL | mysql -u $USERNAME -p"$PASSWORD" $DATABASE
+   if [ $? -eq 0 ]
+   then
+     echo $(tput setaf 2)complete!$(tput setaf 7)
+   else
+     echo $(tput setaf 1)Failed...$(tput setaf 7)
+     echo An error occured during the conversion.
+     exit
+   fi
+done
+
+echo $(tput setaf 2)All done!
